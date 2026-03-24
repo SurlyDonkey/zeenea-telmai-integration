@@ -1,6 +1,9 @@
 import httpx
+import logging
 from typing import List, Optional
 from models import ZeneaDataset
+
+logger = logging.getLogger(__name__)
 
 MOCK_DATASETS = [
     ZeneaDataset(
@@ -40,6 +43,44 @@ MOCK_DATASETS = [
         description="Active and historical supplier contract terms and SLAs",
     ),
 ]
+
+
+def _compute_properties(score: float, alert_count: int) -> List[dict]:
+    """Map Telmai quality metrics to the real Zeenea property schema."""
+
+    # DTC – Data Trust Classification
+    if score >= 85:
+        dtc = "✭✭✭"
+    elif score >= 65:
+        dtc = "✭✭"
+    else:
+        dtc = "✭"
+
+    # Certification
+    if score >= 85 and alert_count == 0:
+        certification = "⭐️ Certified"
+    else:
+        certification = "❌ Not certified"
+
+    # Asset Status
+    if score >= 85:
+        asset_status = "🏆 Gold Standard"
+    elif score >= 60:
+        asset_status = "🟠 To be improved"
+    else:
+        asset_status = "❌ To be decomissioned"
+
+    # Tags
+    score_int = int(round(score))
+    tags = ["telmai-monitored", f"dq-score-{score_int}"]
+
+    return [
+        {"code": "DTC", "value": dtc},
+        {"code": "certification", "value": certification},
+        {"code": "assetStatus", "value": asset_status},
+        {"code": "dataProfilingAvailable", "value": "✅ Yes"},
+        {"code": "$z_tags", "value": tags},
+    ]
 
 
 class ZeneaClient:
@@ -86,31 +127,40 @@ class ZeneaClient:
                 for item in items
             ]
 
-    async def update_quality_property(
+    async def update_quality_properties(
         self,
         item_id: str,
         score: float,
         alert_count: int,
         last_checked: str,
     ) -> bool:
+        """
+        Write Telmai quality metrics back to Zeenea using the real property schema.
+
+        Maps score / alert_count to DTC, certification, assetStatus,
+        dataProfilingAvailable, and $z_tags via _compute_properties().
+        """
+        properties = _compute_properties(score, alert_count)
+
         if self._is_mock:
+            logger.info(
+                "Mock mode — would update Zeenea item '%s' with properties: %s",
+                item_id,
+                properties,
+            )
             return True
 
         mutation = """
-        mutation UpdateQualityProperties($id: ID!, $properties: [PropertyInput!]!) {
-          updateDatasetProperties(id: $id, properties: $properties) {
-            id
+        mutation UpdateItemProperties($itemKey: ItemKeyInput!, $properties: [PropertyValueInput!]!) {
+          updateItemProperties(itemKey: $itemKey, properties: $properties) {
+            key
             name
           }
         }
         """
         variables = {
-            "id": item_id,
-            "properties": [
-                {"key": "telmai_quality_score", "value": str(score)},
-                {"key": "telmai_alert_count", "value": str(alert_count)},
-                {"key": "telmai_last_checked", "value": last_checked},
-            ],
+            "itemKey": {"id": item_id},
+            "properties": properties,
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(

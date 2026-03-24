@@ -1,83 +1,95 @@
 """
-In-memory store for mappings, sync log, and runtime config.
-Also provides factory functions for API clients.
+Factory functions for API clients and runtime settings.
+Settings are read from DB first, then fall back to environment variables.
 """
 import os
-from typing import Dict, Any, List
+from typing import Dict, Optional
+
 from dotenv import load_dotenv
+from sqlmodel import Session, select
 
 load_dotenv()
 
-# Mapping: zeenea_id -> {telmai_id, telmai_name, last_synced}
-mappings_store: Dict[str, Any] = {}
+# ---------------------------------------------------------------------------
+# Settings helpers (DB-backed with env-var fallback)
+# ---------------------------------------------------------------------------
 
-# Sync log entries (most recent first)
-sync_log: List[Any] = []
-
-# Sync status counters / timestamps
-sync_status: Dict[str, Any] = {
-    "last_push": None,
-    "last_pull": None,
-    "last_full": None,
-    "push_synced": 0,
-    "push_failed": 0,
-    "pull_synced": 0,
-    "pull_failed": 0,
-}
-
-# Runtime settings (can be overridden via /api/settings)
-_runtime_settings: Dict[str, str] = {}
+def get_setting_from_db(session: Session, key: str) -> Optional[str]:
+    """Return the value for *key* stored in AppSettings, or None."""
+    from database import AppSettings
+    row = session.exec(select(AppSettings).where(AppSettings.key == key)).first()
+    return row.value if row else None
 
 
-def get_setting(key: str, env_key: str) -> str:
-    return _runtime_settings.get(key) or os.getenv(env_key, "")
+def save_setting_to_db(session: Session, key: str, value: str) -> None:
+    """Upsert a key/value pair into AppSettings."""
+    from database import AppSettings
+    row = session.exec(select(AppSettings).where(AppSettings.key == key)).first()
+    if row:
+        row.value = value
+    else:
+        row = AppSettings(key=key, value=value)
+        session.add(row)
+    session.commit()
 
 
-def update_settings(updates: Dict[str, str]) -> None:
-    _runtime_settings.update({k: v for k, v in updates.items() if v})
+def _get_setting_env(key: str, env_key: str) -> str:
+    """Read from env vars only (used when no DB session is available)."""
+    return os.getenv(env_key, "")
 
 
 def get_current_settings() -> Dict[str, str]:
-    return {
-        "zeenea_url": get_setting("zeenea_url", "ZEENEA_URL"),
-        "zeenea_api_key": get_setting("zeenea_api_key", "ZEENEA_API_KEY"),
-        "telmai_url": get_setting("telmai_url", "TELMAI_URL"),
-        "telmai_token": get_setting("telmai_token", "TELMAI_TOKEN"),
-    }
+    """
+    Return current settings by reading from the DB when possible,
+    falling back to environment variables.
+    """
+    from database import engine
+    from sqlmodel import Session as _Session
 
+    with _Session(engine) as session:
+        def _get(key: str, env_key: str) -> str:
+            db_val = get_setting_from_db(session, key)
+            return db_val if db_val else os.getenv(env_key, "")
+
+        return {
+            "zeenea_url": _get("zeenea_url", "ZEENEA_URL"),
+            "zeenea_api_key": _get("zeenea_api_key", "ZEENEA_API_KEY"),
+            "telmai_url": _get("telmai_url", "TELMAI_URL"),
+            "telmai_token": _get("telmai_token", "TELMAI_TOKEN"),
+        }
+
+
+def update_settings(updates: Dict[str, str]) -> None:
+    """
+    Persist non-empty setting values to the DB and keep an in-memory copy
+    so that get_zeenea_client() / get_telmai_client() pick them up immediately.
+    """
+    from database import engine
+    from sqlmodel import Session as _Session
+
+    with _Session(engine) as session:
+        for key, value in updates.items():
+            if value:
+                save_setting_to_db(session, key, value)
+
+
+# ---------------------------------------------------------------------------
+# Client factories
+# ---------------------------------------------------------------------------
 
 def get_zeenea_client():
     from clients import ZeneaClient
+    settings = get_current_settings()
     return ZeneaClient(
-        url=get_setting("zeenea_url", "ZEENEA_URL"),
-        api_key=get_setting("zeenea_api_key", "ZEENEA_API_KEY"),
+        url=settings["zeenea_url"],
+        api_key=settings["zeenea_api_key"],
     )
 
 
 def get_telmai_client():
     from clients import TelmaiClient
+    settings = get_current_settings()
     return TelmaiClient(
-        base_url=get_setting("telmai_url", "TELMAI_URL"),
-        token=get_setting("telmai_token", "TELMAI_TOKEN"),
+        base_url=settings["telmai_url"],
+        token=settings["telmai_token"],
     )
-
-
-def _seed_demo_mappings():
-    """Pre-populate mappings so the dashboard shows data out of the box."""
-    from datetime import datetime, timezone
-    demo = [
-        ("zee-001", "tel-001", "Customer Orders"),
-        ("zee-002", "tel-002", "Product Catalog"),
-        ("zee-003", "tel-003", "User Events Stream"),
-        ("zee-004", "tel-004", "Inventory Levels"),
-        ("zee-005", "tel-005", "Revenue Metrics"),
-    ]
-    for zeenea_id, telmai_id, telmai_name in demo:
-        mappings_store[zeenea_id] = {
-            "telmai_id": telmai_id,
-            "telmai_name": telmai_name,
-            "last_synced": datetime.now(timezone.utc),
-        }
-
-
-_seed_demo_mappings()
