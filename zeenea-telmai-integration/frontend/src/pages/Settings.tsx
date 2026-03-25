@@ -201,7 +201,7 @@ export default function Settings() {
           <Field label="API Key" value={form.zeenea_api_key}
             onChange={v => handleChange('zeenea_api_key', v)}
             placeholder="your_zeenea_api_key" type="password"
-            hint="Sent as X-API-Key header" />
+            hint="Sent as X-API-SECRET header" />
         </div>
         <div className="mt-4 flex items-center gap-3">
           <button onClick={() => handleTest('zeenea')} disabled={testing.zeenea}
