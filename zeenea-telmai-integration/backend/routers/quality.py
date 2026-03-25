@@ -72,8 +72,8 @@ async def get_quality_detail(
     zeenea_datasets = await zeenea.get_datasets()
     zds = next((ds for ds in zeenea_datasets if ds.id == zeenea_id), None)
 
-    alerts = await telmai.get_alerts(dataset_id=mapping.telmai_id)
-    metrics = await telmai.get_metrics(dataset_id=mapping.telmai_id)
+    alerts = await telmai.get_incidents(asset_id=mapping.telmai_id)
+    metrics = await telmai.get_dq_score(asset_id=mapping.telmai_id)
 
     telmai_datasets = await telmai.get_datasets()
     tds = next((ds for ds in telmai_datasets if ds.id == mapping.telmai_id), None)

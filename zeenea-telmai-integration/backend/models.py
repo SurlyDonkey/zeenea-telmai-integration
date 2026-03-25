@@ -53,8 +53,12 @@ class LinkRequest(BaseModel):
 class SettingsUpdate(BaseModel):
     zeenea_url: Optional[str] = None
     zeenea_api_key: Optional[str] = None
-    telmai_url: Optional[str] = None
-    telmai_token: Optional[str] = None
+    telmai_endpoint: Optional[str] = None
+    telmai_tenant: Optional[str] = None
+    telmai_username: Optional[str] = None
+    telmai_password: Optional[str] = None
+    telmai_client_id: Optional[str] = None
+    telmai_auth_endpoint: Optional[str] = None
 
 
 class ConnectionTestResult(BaseModel):

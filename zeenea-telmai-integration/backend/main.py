@@ -67,7 +67,7 @@ async def get_settings():
     settings = get_current_settings()
     masked = {}
     for k, v in settings.items():
-        if "key" in k or "token" in k:
+        if any(s in k for s in ("key", "token", "password")):
             masked[k] = ("*" * 8 + v[-4:]) if v and len(v) > 4 else ("****" if v else "")
         else:
             masked[k] = v
@@ -76,15 +76,12 @@ async def get_settings():
 
 @app.post("/api/settings", dependencies=[Depends(verify_api_key)])
 async def save_settings(body: SettingsUpdate):
-    updates = {}
-    if body.zeenea_url is not None:
-        updates["zeenea_url"] = body.zeenea_url
-    if body.zeenea_api_key is not None:
-        updates["zeenea_api_key"] = body.zeenea_api_key
-    if body.telmai_url is not None:
-        updates["telmai_url"] = body.telmai_url
-    if body.telmai_token is not None:
-        updates["telmai_token"] = body.telmai_token
+    fields = [
+        "zeenea_url", "zeenea_api_key",
+        "telmai_endpoint", "telmai_tenant", "telmai_username",
+        "telmai_password", "telmai_client_id", "telmai_auth_endpoint",
+    ]
+    updates = {f: getattr(body, f) for f in fields if getattr(body, f) is not None}
     update_settings(updates)
     return {"detail": "Settings updated successfully"}
 
