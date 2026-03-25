@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchSettings, saveSettings, testConnection, ConnectionTestResult } from '../api/client'
+import { fetchSettings, saveSettings, testConnection, ConnectionTestResult, fetchSchedulerConfig, saveSchedulerConfig, SchedulerConfig } from '../api/client'
 
 interface FormState {
   zeenea_url: string
@@ -63,6 +63,10 @@ export default function Settings() {
   })
   const [webhookConfig, setWebhookConfig] = useState<WebhookConfig | null>(null)
   const [copied, setCopied] = useState(false)
+  const [schedulerConfig, setSchedulerConfig] = useState<SchedulerConfig | null>(null)
+  const [intervalHours, setIntervalHours] = useState<number>(4)
+  const [savingScheduler, setSavingScheduler] = useState(false)
+  const [schedulerSaved, setSchedulerSaved] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -73,9 +77,10 @@ export default function Settings() {
   useEffect(() => {
     async function load() {
       try {
-        const [settings, wh] = await Promise.all([
+        const [settings, wh, sched] = await Promise.all([
           fetchSettings(),
           fetch('/api/webhooks/telmai/config').then(r => r.json()).catch(() => null),
+          fetchSchedulerConfig().catch(() => null),
         ])
         setForm({
           zeenea_url:           settings.zeenea_url          ?? '',
@@ -88,6 +93,7 @@ export default function Settings() {
           telmai_auth_endpoint: settings.telmai_auth_endpoint ?? '',
         })
         if (wh) setWebhookConfig(wh)
+        if (sched) { setSchedulerConfig(sched); setIntervalHours(sched.interval_hours) }
       } catch (e: any) {
         setError(e.message)
       } finally {
@@ -130,6 +136,20 @@ export default function Settings() {
       }))
     } finally {
       setTesting(prev => ({ ...prev, [service]: false }))
+    }
+  }
+
+  async function handleSaveScheduler() {
+    setSavingScheduler(true)
+    try {
+      const updated = await saveSchedulerConfig(intervalHours)
+      setSchedulerConfig(updated)
+      setSchedulerSaved(true)
+      setTimeout(() => setSchedulerSaved(false), 3000)
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setSavingScheduler(false)
     }
   }
 
@@ -316,6 +336,74 @@ export default function Settings() {
         ) : (
           <div className="text-sm text-slate-400">Loading webhook configuration…</div>
         )}
+      </div>
+
+      {/* Scheduler */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xl">⏱</span>
+          <h2 className="font-semibold text-slate-800 text-lg">Auto-Sync Schedule</h2>
+          {schedulerConfig && (
+            <span className={`ml-auto text-xs px-2 py-0.5 rounded-full font-medium ${schedulerConfig.is_running ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+              {schedulerConfig.is_running ? '● Running' : '○ Stopped'}
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-slate-500 mb-5">
+          How often the integration automatically runs a full push + pull sync. Changes take effect immediately.
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Sync interval
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min={0.25}
+                max={168}
+                step={0.25}
+                value={intervalHours}
+                onChange={e => setIntervalHours(parseFloat(e.target.value) || 4)}
+                className="w-32 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <span className="text-sm text-slate-500">hours</span>
+              <span className="text-xs text-slate-400">(min 0.25 · max 168)</span>
+            </div>
+            {/* Quick presets */}
+            <div className="flex gap-2 mt-2">
+              {[1, 4, 12, 24].map(h => (
+                <button
+                  key={h}
+                  onClick={() => setIntervalHours(h)}
+                  className={`px-2 py-1 text-xs rounded border transition-colors ${intervalHours === h ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}
+                >
+                  {h}h
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {schedulerConfig?.next_run && (
+            <p className="text-xs text-slate-400">
+              Next run: {new Date(schedulerConfig.next_run).toLocaleString()}
+            </p>
+          )}
+        </div>
+
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            onClick={handleSaveScheduler}
+            disabled={savingScheduler}
+            className="px-4 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50 transition-colors"
+          >
+            {savingScheduler ? 'Saving…' : 'Update Schedule'}
+          </button>
+          {schedulerSaved && (
+            <span className="text-emerald-600 text-sm font-medium">✓ Schedule updated</span>
+          )}
+        </div>
       </div>
 
       {/* Save */}

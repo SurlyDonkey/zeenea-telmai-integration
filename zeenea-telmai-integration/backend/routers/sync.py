@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select, delete
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
+from pydantic import BaseModel, Field
 import uuid
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -20,6 +21,19 @@ router = APIRouter(
 
 # Module-level scheduler — started by main.py on startup
 scheduler = AsyncIOScheduler()
+
+# Default sync interval in hours (can be changed at runtime)
+_sync_interval_hours: float = 4.0
+
+
+class SchedulerConfigRequest(BaseModel):
+    interval_hours: float = Field(ge=0.25, le=168.0, description="Sync interval in hours (0.25–168)")
+
+
+class SchedulerConfigResponse(BaseModel):
+    interval_hours: float
+    next_run: Optional[str]
+    is_running: bool
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +260,42 @@ async def clear_sync_log(session: Session = Depends(get_session)):
     session.exec(delete(DBSyncLogEntry))
     session.commit()
     return {"detail": "Sync log cleared"}
+
+
+@router.get("/scheduler", response_model=SchedulerConfigResponse)
+async def get_scheduler_config() -> SchedulerConfigResponse:
+    """Return the current auto-sync interval and next scheduled run."""
+    job = scheduler.get_job("full_sync")
+    next_run = None
+    if job and job.next_run_time:
+        next_run = job.next_run_time.isoformat()
+    return SchedulerConfigResponse(
+        interval_hours=_sync_interval_hours,
+        next_run=next_run,
+        is_running=scheduler.running,
+    )
+
+
+@router.post("/scheduler", response_model=SchedulerConfigResponse)
+async def update_scheduler_config(body: SchedulerConfigRequest) -> SchedulerConfigResponse:
+    """Update the auto-sync interval. Takes effect immediately."""
+    global _sync_interval_hours
+    _sync_interval_hours = body.interval_hours
+
+    if scheduler.running:
+        scheduler.reschedule_job(
+            "full_sync",
+            trigger="interval",
+            hours=body.interval_hours,
+        )
+
+    job = scheduler.get_job("full_sync")
+    next_run = job.next_run_time.isoformat() if job and job.next_run_time else None
+    return SchedulerConfigResponse(
+        interval_hours=_sync_interval_hours,
+        next_run=next_run,
+        is_running=scheduler.running,
+    )
 
 
 @router.get("/status")

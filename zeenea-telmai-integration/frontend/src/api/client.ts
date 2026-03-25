@@ -30,10 +30,16 @@ export interface TelmaiDataset {
 export interface SyncLogEntry {
   id: string
   timestamp: string
-  direction: 'push' | 'pull' | 'full'
+  direction: 'push' | 'pull' | 'full' | 'webhook'
   asset_name: string
   status: 'success' | 'failed' | 'skipped'
   message: string
+}
+
+export interface SchedulerConfig {
+  interval_hours: number
+  next_run: string | null
+  is_running: boolean
 }
 
 export interface SyncResult {
@@ -167,4 +173,15 @@ export async function saveSettings(settings: Record<string, string>): Promise<vo
 
 export async function testConnection(service: 'zeenea' | 'telmai'): Promise<ConnectionTestResult> {
   return request(`/api/settings/test/${service}`, { method: 'POST' })
+}
+
+export async function fetchSchedulerConfig(): Promise<SchedulerConfig> {
+  return request('/api/sync/scheduler')
+}
+
+export async function saveSchedulerConfig(interval_hours: number): Promise<SchedulerConfig> {
+  return request('/api/sync/scheduler', {
+    method: 'POST',
+    body: JSON.stringify({ interval_hours }),
+  })
 }
