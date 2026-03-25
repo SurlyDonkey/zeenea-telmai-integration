@@ -80,6 +80,7 @@ class SettingsUpdate(BaseModel):
     zeenea_api_key: Optional[str] = None
     telmai_endpoint: Optional[str] = None
     telmai_tenant: Optional[str] = None
+    telmai_api_token: Optional[str] = None       # static Bearer token (Okta/SSO deployments)
     telmai_username: Optional[str] = None
     telmai_password: Optional[str] = None
     telmai_client_id: Optional[str] = None

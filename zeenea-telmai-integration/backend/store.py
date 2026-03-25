@@ -52,14 +52,15 @@ def get_current_settings() -> Dict[str, str]:
             return db_val if db_val else os.getenv(env_key, "")
 
         return {
-            "zeenea_url":          _get("zeenea_url",          "ZEENEA_URL"),
-            "zeenea_api_key":      _get("zeenea_api_key",      "ZEENEA_API_KEY"),
-            "telmai_endpoint":     _get("telmai_endpoint",     "TELMAI_ENDPOINT"),
-            "telmai_tenant":       _get("telmai_tenant",       "TELMAI_TENANT"),
-            "telmai_username":     _get("telmai_username",     "TELMAI_USERNAME"),
-            "telmai_password":     _get("telmai_password",     "TELMAI_PASSWORD"),
-            "telmai_client_id":    _get("telmai_client_id",    "TELMAI_CLIENT_ID"),
-            "telmai_auth_endpoint":_get("telmai_auth_endpoint","TELMAI_AUTH_ENDPOINT"),
+            "zeenea_url":           _get("zeenea_url",           "ZEENEA_URL"),
+            "zeenea_api_key":       _get("zeenea_api_key",       "ZEENEA_API_KEY"),
+            "telmai_endpoint":      _get("telmai_endpoint",      "TELMAI_ENDPOINT"),
+            "telmai_tenant":        _get("telmai_tenant",        "TELMAI_TENANT"),
+            "telmai_api_token":     _get("telmai_api_token",     "TELMAI_API_TOKEN"),
+            "telmai_username":      _get("telmai_username",      "TELMAI_USERNAME"),
+            "telmai_password":      _get("telmai_password",      "TELMAI_PASSWORD"),
+            "telmai_client_id":     _get("telmai_client_id",     "TELMAI_CLIENT_ID"),
+            "telmai_auth_endpoint": _get("telmai_auth_endpoint", "TELMAI_AUTH_ENDPOINT"),
         }
 
 
@@ -96,6 +97,7 @@ def get_telmai_client():
     return TelmaiClient(
         endpoint=settings["telmai_endpoint"],
         tenant=settings["telmai_tenant"],
+        api_token=settings["telmai_api_token"],
         username=settings["telmai_username"],
         password=settings["telmai_password"],
         client_id=settings["telmai_client_id"] or "telmai",

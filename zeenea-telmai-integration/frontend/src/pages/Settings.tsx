@@ -6,6 +6,7 @@ interface FormState {
   zeenea_api_key: string
   telmai_endpoint: string
   telmai_tenant: string
+  telmai_api_token: string
   telmai_username: string
   telmai_password: string
   telmai_client_id: string
@@ -56,6 +57,7 @@ export default function Settings() {
     zeenea_api_key: '',
     telmai_endpoint: '',
     telmai_tenant: '',
+    telmai_api_token: '',
     telmai_username: '',
     telmai_password: '',
     telmai_client_id: '',
@@ -87,6 +89,7 @@ export default function Settings() {
           zeenea_api_key:       settings.zeenea_api_key      ?? '',
           telmai_endpoint:      settings.telmai_endpoint      ?? '',
           telmai_tenant:        settings.telmai_tenant        ?? '',
+          telmai_api_token:     settings.telmai_api_token     ?? '',
           telmai_username:      settings.telmai_username      ?? '',
           telmai_password:      settings.telmai_password      ?? '',
           telmai_client_id:     settings.telmai_client_id     ?? '',
@@ -234,6 +237,12 @@ export default function Settings() {
             onChange={v => handleChange('telmai_tenant', v)}
             placeholder="your_tenant_name"
             hint="Your Telmai tenant identifier" />
+          <Field label="API Token" value={form.telmai_api_token}
+            onChange={v => handleChange('telmai_api_token', v)}
+            placeholder="eyJ..."
+            type="password"
+            hint="Bearer token for Okta/SSO deployments (e.g. Actian). Takes priority over username/password below." />
+          <p className="text-xs text-slate-400 -mt-2">— or use username / password for standard Telmai deployments —</p>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Username" value={form.telmai_username}
               onChange={v => handleChange('telmai_username', v)}

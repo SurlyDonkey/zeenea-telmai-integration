@@ -1,15 +1,22 @@
 """
 Telmai REST API client.
 
-Real API structure (from Telmai docs):
-  Auth:      POST {auth_endpoint}/auth/token  (form-encoded, password grant)
-  Base:      {telmai_endpoint}/api/backend/{tenant}/
-  Incidents: GET  .../incidents
-  DQ Score:  GET  .../configuration/assets/{assetId}/dq_score
-  Monitors:  GET  .../configuration/assets/{assetId}/monitors
-  Alerts:    POST .../configuration/alerts/by_filters
+Confirmed API structure (live-tested against data-observability.actian.com):
 
-Token is a short-lived Bearer token (3600 s); we re-authenticate on expiry.
+  Auth — two supported modes:
+    A) Static API token (Okta / SSO deployments like Actian):
+         Set api_token directly. Used as-is as a Bearer token.
+         Obtain from the Telmai UI → Profile → API Token (or from browser session).
+    B) OAuth2 password grant (standard Telmai deployments):
+         POST {auth_endpoint}/api/auth/token?grantType=password&username=...&password=...&clientId=...&tenant=...
+         Note: params go as QUERY PARAMS (not form body), field is grantType (not grant_type).
+
+  Base URL:  {endpoint}/api/backend/{tenant}/
+  Assets:    GET  .../configuration/assets          → list[{id, name, dq_score, ...}]
+  Incidents: GET  .../incidents                     → list[{id, severity, asset_id, status, ...}]
+  DQ Config: GET  .../configuration/assets/{id}/dq_score → {weights: {...}, max_incidents, ...}
+             NOTE: returns weight config, not score. Actual score is on the asset object (dq_score 0-100).
+  Alerts:    POST .../configuration/sources/{sourceId}/alerts?job_id={jobId}
 """
 
 import httpx
@@ -104,33 +111,39 @@ class TelmaiClient:
     Client for the Telmai Data Observability API.
 
     Config params:
-      endpoint   - base URL, e.g. https://app.telm.ai
-      tenant     - your Telmai tenant name
-      username   - Telmai login username
-      password   - Telmai login password
-      client_id  - OAuth2 client ID (provided by Telmai)
-      auth_endpoint - auth server URL (defaults to endpoint if not set)
+      endpoint     - base URL, e.g. https://app.telm.ai
+      tenant       - your Telmai tenant name
+      api_token    - static Bearer token (Okta/SSO deployments — skips OAuth2 flow)
+      username     - Telmai login (OAuth2 password grant only)
+      password     - Telmai login (OAuth2 password grant only)
+      client_id    - OAuth2 client ID, default "telmai"
+      auth_endpoint - auth server URL (defaults to endpoint)
+
+    If api_token is set it takes precedence over username/password.
     """
 
     def __init__(
         self,
         endpoint: str,
         tenant: str,
-        username: str,
-        password: str,
+        api_token: str = "",
+        username: str = "",
+        password: str = "",
         client_id: str = "telmai",
         auth_endpoint: Optional[str] = None,
     ):
         self.endpoint = endpoint.rstrip("/") if endpoint else ""
         self.tenant = tenant or ""
+        self.api_token = api_token or ""
         self.username = username or ""
         self.password = password or ""
         self.client_id = client_id or "telmai"
         self.auth_endpoint = (auth_endpoint or endpoint or "").rstrip("/")
 
-        self._is_mock = not endpoint or not tenant or not username or not password
+        # Mock mode if neither token nor username/password are provided
+        self._is_mock = not endpoint or not tenant or (not api_token and not (username and password))
 
-        # Token cache
+        # OAuth2 token cache (unused in static token mode)
         self._access_token: Optional[str] = None
         self._token_expires_at: float = 0.0
 
@@ -147,21 +160,33 @@ class TelmaiClient:
         return f"{self.endpoint}/api/backend/{self.tenant}/{path.lstrip('/')}"
 
     async def _get_token(self) -> str:
-        """Return a valid Bearer token, refreshing if needed."""
+        """
+        Return a valid Bearer token.
+
+        Static token mode: returns api_token directly (no OAuth2 call).
+        OAuth2 mode: POST to {auth_endpoint}/api/auth/token with query params
+                     (Telmai uses ?grantType=password&username=... not a form body).
+        """
+        # Static token — used as-is (Okta / SSO deployments)
+        if self.api_token:
+            return self.api_token
+
+        # OAuth2 password grant — use cached token if still valid
         if self._access_token and time.time() < self._token_expires_at - 30:
             return self._access_token
 
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(
-                f"{self.auth_endpoint}/auth/token",
-                data={
-                    "grant_type": "password",
-                    "username": self.username,
-                    "password": self.password,
-                    "clientId": self.client_id,
-                    "tenant": self.tenant,
+                f"{self.auth_endpoint}/api/auth/token",
+                params={                          # ← query params, NOT form body
+                    "grantType": "password",      # ← grantType, NOT grant_type
+                    "username":  self.username,
+                    "password":  self.password,
+                    "clientId":  self.client_id,
+                    "tenant":    self.tenant,
                 },
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                headers={"accept": "*/*"},
+                content=b"",
             )
             response.raise_for_status()
             data = response.json()
@@ -198,28 +223,23 @@ class TelmaiClient:
             )
             response.raise_for_status()
             items = response.json()
-            items = items if isinstance(items, list) else items.get("data", [])
+            items = items if isinstance(items, list) else items.get("data", items.get("items", []))
 
             results = []
             for item in items:
                 asset_id = item.get("id") or item.get("assetId", "")
-                # Fetch DQ score for each asset (best-effort)
-                score = None
-                try:
-                    dq = await self.get_dq_score(asset_id)
-                    if dq:
-                        vals = [v for v in dq.values() if isinstance(v, (int, float))]
-                        score = round(sum(vals) / len(vals), 1) if vals else None
-                except Exception:
-                    pass
+                # dq_score is on the asset object directly (0-100 scale)
+                score = item.get("dq_score") or item.get("qualityScore")
+                if score is not None:
+                    score = float(score)
 
                 results.append(TelmaiDataset(
                     id=asset_id,
                     name=item.get("name", asset_id),
                     display_name=item.get("displayName") or item.get("name", asset_id),
-                    external_id=item.get("externalId"),
+                    external_id=item.get("externalId") or item.get("canonical_id"),
                     quality_score=score,
-                    alert_count=item.get("openIncidents", 0),
+                    alert_count=item.get("openIncidents") or item.get("open_incidents") or 0,
                 ))
             return results
 
