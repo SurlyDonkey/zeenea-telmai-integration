@@ -292,6 +292,37 @@ class TelmaiClient:
             data = response.json()
             return data if isinstance(data, list) else data.get("data", [])
 
+    async def check_for_alerts(
+        self,
+        source_id: str,
+        job_id: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieve alerts for a specific data upload job.
+        Called immediately after Telmai completes a scan (webhook flow).
+
+        Maps to:
+          POST /api/backend/{tenant}/configuration/sources/{sourceID}/alerts?job_id={job_id}
+
+        Returns list of alert objects:
+          { type, source, description, job_id, create_time, save_time,
+            metric_value, policy_name, priority, source_name, source_type }
+        """
+        if self._is_mock:
+            # Return a small set of mock alerts for the requested source
+            all_alerts = [a for alerts in MOCK_INCIDENTS.values() for a in alerts]
+            return all_alerts[:3]
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                self._backend_url(f"configuration/sources/{source_id}/alerts"),
+                params={"job_id": job_id},
+                headers=await self._headers(),
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data if isinstance(data, list) else data.get("data", [])
+
     async def register_dataset(
         self,
         name: str,

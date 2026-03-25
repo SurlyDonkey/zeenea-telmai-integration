@@ -46,6 +46,31 @@ class SyncResult(BaseModel):
     log_entries: List[SyncLogEntry]
 
 
+class TelmaiWebhookPayload(BaseModel):
+    """
+    Payload sent by Telmai when a data scan completes.
+    Used to immediately pull fresh alerts and update Zeenea.
+
+    source_id: Telmai source/asset identifier
+    job_id:    Upload/scan job identifier — passed to Check for Alerts API
+    event:     Event type (e.g. "scan_complete", "alert_triggered")
+    tenant:    Optional — overrides the configured tenant for this request
+    """
+    source_id: str
+    job_id: str
+    event: str = "scan_complete"
+    tenant: Optional[str] = None
+
+
+class WebhookResult(BaseModel):
+    source_id: str
+    job_id: str
+    alerts_found: int
+    zeenea_updated: bool
+    quality_score: Optional[float] = None
+    message: str
+
+
 class LinkRequest(BaseModel):
     telmai_id: str
 

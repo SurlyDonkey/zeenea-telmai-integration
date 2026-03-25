@@ -3,7 +3,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timezone
 
-from routers import assets_router, quality_router, sync_router
+from routers import assets_router, quality_router, sync_router, webhooks_router
 from routers.sync import scheduler, _scheduled_full_sync
 from store import get_zeenea_client, get_telmai_client, get_current_settings, update_settings
 from models import SettingsUpdate, ConnectionTestResult
@@ -51,6 +51,7 @@ app.add_middleware(
 app.include_router(assets_router)
 app.include_router(quality_router)
 app.include_router(sync_router)
+app.include_router(webhooks_router)
 
 
 @app.get("/health")

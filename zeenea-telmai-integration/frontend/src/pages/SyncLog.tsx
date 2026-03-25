@@ -24,15 +24,17 @@ const statusBadge: Record<string, string> = {
 }
 
 const directionLabel: Record<string, string> = {
-  push: '→ Push',
-  pull: '← Pull',
-  full: '⇄ Full',
+  push:    '→ Push',
+  pull:    '← Pull',
+  full:    '⇄ Full',
+  webhook: '⚡ Webhook',
 }
 
 const directionBadge: Record<string, string> = {
-  push: 'bg-violet-100 text-violet-700',
-  pull: 'bg-cyan-100 text-cyan-700',
-  full: 'bg-indigo-100 text-indigo-700',
+  push:    'bg-violet-100 text-violet-700',
+  pull:    'bg-cyan-100 text-cyan-700',
+  full:    'bg-indigo-100 text-indigo-700',
+  webhook: 'bg-amber-100 text-amber-700',
 }
 
 export default function SyncLog() {

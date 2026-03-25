@@ -106,19 +106,39 @@ class ZeneaClient:
         self._is_mock = not url or not api_key or api_key == "your_zeenea_api_key"
 
     def _headers(self) -> dict:
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+        # Zeenea catalog API uses X-API-Key, not Authorization: Bearer
+        return {"X-API-Key": self.api_key}
 
-    async def _graphql(self, query: str, variables: Optional[dict] = None) -> dict:
-        """Execute a GraphQL operation and return the parsed response."""
-        payload: dict = {"query": query}
+    async def _graphql_query(self, query: str, variables: Optional[dict] = None) -> dict:
+        """
+        Execute a GraphQL *query* via GET with query string params.
+        Zeenea catalog API: GET /api/catalog/graphql?query=...&variables=...
+        """
+        import json as _json
+        params: dict = {"query": query}
+        if variables:
+            params["variables"] = _json.dumps(variables)
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(self.url, params=params, headers=self._headers())
+            response.raise_for_status()
+            return response.json()
+
+    async def _graphql_mutation(self, mutation: str, variables: Optional[dict] = None) -> dict:
+        """
+        Execute a GraphQL *mutation* via POST with JSON body.
+        Mutations must use POST even though queries use GET.
+        """
+        payload: dict = {"query": mutation}
         if variables:
             payload["variables"] = variables
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(self.url, json=payload, headers=self._headers())
+            response = await client.post(
+                self.url,
+                json=payload,
+                headers={**self._headers(), "Content-Type": "application/json"},
+            )
             response.raise_for_status()
             return response.json()
 
@@ -149,7 +169,7 @@ class ZeneaClient:
         after: Optional[str] = None
 
         while True:
-            data = await self._graphql(query, {"first": 100, "after": after})
+            data = await self._graphql_query(query, {"first": 100, "after": after})
             result = data.get("data", {}).get("datasets", {})
             for item in result.get("items", []):
                 datasets.append(ZeneaDataset(
@@ -206,7 +226,7 @@ class ZeneaClient:
             "properties": properties,
         }
 
-        data = await self._graphql(mutation, variables)
+        data = await self._graphql_mutation(mutation, variables)
 
         if "errors" in data:
             logger.error(
